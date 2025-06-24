@@ -1,0 +1,22 @@
+{
+  "best_accuracy": 1.0,
+  "epoch": 82,
+  "run_date": "2025-06-20T04:25:29.286868",
+  "train_loss": 0.4867326219876607,
+  "val_loss": 0.5522065162658691,
+  "confusion_matrix": [
+    [
+      4,
+      0
+    ],
+    [
+      0,
+      6
+    ]
+  ],
+  "hyperparameters": {
+    "epochs": 400,
+    "lr": 5e-05,
+    "model_type": "TwoChannelLSTMClassifier"
+  }
+}
