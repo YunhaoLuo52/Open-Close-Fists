@@ -198,7 +198,6 @@ class EEGNetTrainer:
         )
 
 
-# Example usage and integration with your existing code
 def create_eegnet_model(task_type='binary', num_classes=1, samples=1025):
     """
     Factory function to create appropriate EEGNet model
@@ -240,7 +239,6 @@ def create_eegnet_model(task_type='binary', num_classes=1, samples=1025):
     return model
 
 
-# Integration example with your existing training loop
 def train_eegnet_model(model, train_loader, val_loader, device, epochs=100, lr=0.001):
     """
     Modified training loop for EEGNet with max norm constraint
@@ -313,31 +311,3 @@ def train_eegnet_model(model, train_loader, val_loader, device, epochs=100, lr=0
                   f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.4f}')
     
     return train_losses, val_losses, best_val_acc
-
-
-# Usage example to replace your current model
-"""
-# Replace your current model initialization with:
-
-# 1. Create EEGNet model
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = create_eegnet_model(task_type='binary', num_classes=1, samples=1025).to(device)
-
-# 2. Wrap your dataset for EEGNet format
-eegnet_train_dataset = EEGNetDataset(train_dataset)
-eegnet_val_dataset = EEGNetDataset(val_dataset)
-eegnet_test_dataset = EEGNetDataset(test_dataset)
-
-# 3. Create data loaders
-train_loader = DataLoader(eegnet_train_dataset, batch_size=32, shuffle=True)
-val_loader = DataLoader(eegnet_val_dataset, batch_size=32, shuffle=False)
-test_loader = DataLoader(eegnet_test_dataset, batch_size=32, shuffle=False)
-
-# 4. Train with EEGNet-specific training loop
-train_losses, val_losses, best_acc = train_eegnet_model(
-    model, train_loader, val_loader, device, epochs=200, lr=0.001
-)
-
-# 5. Use your existing evaluation code (works unchanged)
-labels, preds, probs = evaluate_simple_model(model, test_loader, device)
-"""

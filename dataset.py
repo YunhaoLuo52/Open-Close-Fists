@@ -404,26 +404,30 @@ class TwoChannelEEGDataset(Dataset):
         label = torch.tensor(self.segment_labels[idx], dtype=torch.float)
         return segment, label
 
-# Usage for debugging your data:
-"""
-# Load with different normalization methods
-dataset_raw = FixedTwoChannelEEGDataset(
-    data_dir="your_data_dir", 
-    run_number=1, 
-    normalize_method='none',
-    debug=True
-)
-
-dataset_normalized = FixedTwoChannelEEGDataset(
-    data_dir="your_data_dir", 
-    run_number=1, 
-    normalize_method='global_std',
-    debug=True
-)
-
-# Visualize the problem
-dataset_raw.plot_class_comparison()
-
-# Create proper train/test split
-train_indices, test_indices = dataset_raw.create_proper_train_test_split(method='trial_based')
-"""
+# Modified Dataset class to work with EEGNet input format
+class EEGNetDataset(torch.utils.data.Dataset):
+    """
+    Dataset wrapper that formats data for EEGNet
+    Converts your current data format to EEGNet expected format
+    """
+    
+    def __init__(self, base_dataset):
+        """
+        Args:
+            base_dataset: Your existing TwoChannelEEGDataset
+        """
+        self.base_dataset = base_dataset
+        
+    def __len__(self):
+        return len(self.base_dataset)
+    
+    def __getitem__(self, idx):
+        segment, label = self.base_dataset[idx]
+        
+        # Your current format: (2, time_samples)
+        # EEGNet expected format: (1, 2, time_samples)
+        
+        # Add batch dimension for channels
+        eegnet_segment = segment.unsqueeze(0)  # Shape: (1, 2, time_samples)
+        
+        return eegnet_segment, label

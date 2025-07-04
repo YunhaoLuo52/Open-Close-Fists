@@ -6,6 +6,7 @@ from sklearn.metrics import confusion_matrix, classification_report
 import json
 import os
 from datetime import datetime
+from model import EEGNetTrainer
 
 def train_simple_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3):
     """Simple training loop"""
@@ -383,3 +384,76 @@ def clean_old_models(model_save_dir='models', experiment_name='eeg_classificatio
     print(f"Cleaned {removed_count} old model files")
     if keep_universal_best:
         print(f"Kept universal best: {universal_best_path}")
+
+def train_eegnet_model(model, train_loader, val_loader, device, epochs=100, lr=0.001, experiment_name='fists'):
+    """
+    Modified training loop for EEGNet with max norm constraint
+    """
+    
+    # EEGNet-specific optimizer
+    optimizer = EEGNetTrainer.get_eegnet_optimizer(model, lr=lr)
+    scheduler = EEGNetTrainer.get_eegnet_scheduler(optimizer)
+    
+    # Your existing criterion (works fine with EEGNet)
+    criterion = nn.BCEWithLogitsLoss()
+    
+    best_val_acc = 0
+    train_losses = []
+    val_losses = []
+    
+    for epoch in range(epochs):
+        # Training
+        model.train()
+        train_loss = 0
+        
+        for data, target in train_loader:
+            data, target = data.to(device), target.to(device)
+            
+            optimizer.zero_grad()
+            output = model(data)
+            target = target.view(-1, 1).float()
+            loss = criterion(output, target)
+            loss.backward()
+            
+            # Apply max norm constraint (EEGNet specific)
+            EEGNetTrainer.apply_max_norm_constraint(model)
+            
+            optimizer.step()
+            train_loss += loss.item()
+        
+        # Validation (same as your current code)
+        model.eval()
+        correct = 0
+        total = 0
+        val_loss = 0
+        
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                target_reshaped = target.view(-1, 1).float()
+                loss = criterion(output, target_reshaped)
+                val_loss += loss.item()
+                
+                pred = (torch.sigmoid(output) > 0.5).float()
+                correct += (pred == target_reshaped).sum().item()
+                total += target.size(0)
+        
+        val_acc = correct / total
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
+        
+        scheduler.step(avg_val_loss)
+        
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), f'best_{experiment_name}_eegnet_model.pth')
+        
+        if epoch % 10 == 0:
+            print(f'Epoch {epoch}: Train Loss: {avg_train_loss:.4f}, '
+                  f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.4f}')
+    
+    return train_losses, val_losses, best_val_acc

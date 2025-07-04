@@ -11,11 +11,11 @@ import random
 from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import train_test_split
 
-from dataset import TwoChannelEEGDataset
-from model import TwoChannelLSTMClassifier
+from dataset import TwoChannelEEGDataset, EEGNetDataset
+from model import TwoChannelLSTMClassifier, create_eegnet_model
 from utils import set_all_seeds, create_validation_split
-from training import train_simple_model
-from evaluation import evaluate_simple_model, plot_results, print_classification_results,plot_results_short
+from training import train_simple_model, train_simple_model_with_universal_best, compare_all_runs, train_eegnet_model
+from evaluation import evaluate_simple_model, plot_results, print_classification_results, plot_results_short
 
 
 def main(exp_number=1):
@@ -37,27 +37,29 @@ def main(exp_number=1):
         task = "openclosefeet"
         experiment_name = "feet"        
 
-    # Fists cls
     test_dataset = TwoChannelEEGDataset(
         data_dir=data_dir,
         exp_number=exp_number,
-        run_number=[1],  # load both runs
+        run_number=[1],  # load runs
         task=task,
         window_size=1025,
         debug=False
     )
 
-    model_path = f"C:/Github/Open-Close/models/{experiment_name}_universal_best.pth"  # Path to saved model weights
-    # model_path = f"C:/Github/Open-Close/models/{experiment_name}_current_run.pth"  # Path to saved model weights
-
-    model = TwoChannelLSTMClassifier(input_channels=2, num_classes=1).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    # Wrap existing datasets
+    eegnet_test_dataset = EEGNetDataset(test_dataset)
 
     print(f"Final test: {len(test_dataset)} samples")
 
-    # Data loaders
-    batch_size = 32
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    # Create new data loaders
+    batch_size=32
+    test_loader = DataLoader(eegnet_test_dataset, batch_size=batch_size, shuffle=False)
+
+    model_path = f"C:/Github/Open-Close/best_{experiment_name}_eegnet_model.pth"  # Path to saved model weights
+
+    model = create_eegnet_model(task_type='binary', num_classes=1, samples=1025).to(device)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+
 
     # Load model and evaluate
     labels, preds, probs = evaluate_simple_model(model, test_loader, device)
