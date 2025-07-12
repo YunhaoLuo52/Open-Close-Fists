@@ -1,0 +1,13 @@
+{
+  "task_type": "binary",
+  "num_classes": 1,
+  "samples": 1025,
+  "use_normalization": true,
+  "normalization_params_file": "normalization_params/feet_norm_params.json",
+  "window_size": 1025,
+  "experiment_name": "feet",
+  "task": "openclosefeet",
+  "exp_number": 2,
+  "best_val_acc": 0.9,
+  "test_auc": 0.8992
+}

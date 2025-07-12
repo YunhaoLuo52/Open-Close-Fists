@@ -113,7 +113,9 @@ class EEGNet(nn.Module):
         
         # Block 3: Separable Convolution
         # Efficiently combine features
-        self.separableConv = nn.Conv2d(F1 * D, F2, (1, 16), padding='same', bias=False)
+        kernel_size = (1, 16)
+        padding3 = (kernel_size[0] // 2, kernel_size[1] // 2)  # This gives us (0, 8)
+        self.separableConv = nn.Conv2d(F1 * D, F2, kernel_size, padding=padding3, bias=False)
         self.batchnorm3 = nn.BatchNorm2d(F2, momentum=0.01, eps=0.001)
         self.activation2 = nn.ELU()
         self.pooling2 = nn.AvgPool2d((1, 8))

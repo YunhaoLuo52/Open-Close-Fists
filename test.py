@@ -27,7 +27,7 @@ def main(exp_number=1):
     print(f"Using device: {device}")
     
     # Configuration
-    data_dir = "C:\Github\OpenCloseFeet\Muse_data_OpenCloseFeet_segmented"  # Path to data directory
+    data_dir = "C:\Github\OpenCloseFeet\Muse_data_OpenCloseFeet_segmented\session2"  # Path to data directory
     #data_dir = "D:\Faculty\ColumbiaUniversity\dataprocess\EEG\dataProcessing\Interaxon\museS\LSL\Python\muse-lsl-python\Data\sub-EB-43\Muse_data_OpenCloseFistsFeet_session1_segmented"
 
     if exp_number == 1:

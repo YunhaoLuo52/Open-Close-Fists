@@ -1,0 +1,13 @@
+{
+  "task_type": "binary",
+  "num_classes": 1,
+  "samples": 1025,
+  "use_normalization": true,
+  "normalization_params_file": "normalization_params/fists_norm_params.json",
+  "window_size": 1025,
+  "experiment_name": "fists",
+  "task": "openclosefists",
+  "exp_number": 1,
+  "best_val_acc": 1.0,
+  "test_auc": 0.8064516129032258
+}

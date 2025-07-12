@@ -1,0 +1,22 @@
+{
+  "architecture": "two_stage",
+  "stage1": {
+    "task": "rest_vs_motor",
+    "accuracy": 81.59509202453987,
+    "auc": 0.8795543510990665,
+    "best_epoch": 176
+  },
+  "stage2": {
+    "task": "fists_vs_feet",
+    "accuracy": 56.09756097560976,
+    "auc": 0.635625,
+    "best_epoch": 117
+  },
+  "combined": {
+    "accuracy": 65.03067484662577,
+    "stage1_accuracy": 81.59509202453987,
+    "stage2_accuracy": 51.21951219512195
+  },
+  "use_normalization": false,
+  "window_size": 1025
+}

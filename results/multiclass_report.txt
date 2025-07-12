@@ -1,0 +1,59 @@
+============================================================
+MULTI-CLASS EEG CLASSIFICATION REPORT
+============================================================
+
+MODEL PERFORMANCE SUMMARY
+----------------------------------------
+Test Accuracy: 59.51%
+Macro-average AUC: 0.793
+
+PER-CLASS METRICS
+----------------------------------------
+
+Resting:
+  Precision: 0.926
+  Recall: 0.617
+  F1-Score: 0.741
+  AUC: 0.829
+  Support: 81
+
+Fists:
+  Precision: 0.362
+  Recall: 0.656
+  F1-Score: 0.467
+  AUC: 0.768
+  Support: 32
+
+Feet:
+  Precision: 0.510
+  Recall: 0.520
+  F1-Score: 0.515
+  AUC: 0.781
+  Support: 50
+
+CONFUSION MATRIX
+----------------------------------------
+        Predicted
+        Rest  Fist  Feet
+Rest      50    16    15  
+Fist       1    21    10  
+Feet       3    21    26  
+
+TRAINING SUMMARY
+----------------------------------------
+Final training loss: 0.2474
+Final validation loss: 0.9488
+Best validation accuracy: 70.00%
+Best accuracy epoch: 114
+
+DETAILED CLASSIFICATION REPORT
+----------------------------------------
+              precision    recall  f1-score   support
+
+     Resting      0.926     0.617     0.741        81
+       Fists      0.362     0.656     0.467        32
+        Feet      0.510     0.520     0.515        50
+
+    accuracy                          0.595       163
+   macro avg      0.599     0.598     0.574       163
+weighted avg      0.688     0.595     0.618       163

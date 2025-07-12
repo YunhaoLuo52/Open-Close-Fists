@@ -1,0 +1,15 @@
+1. 7:53 PM : open/close both fists
+2. 8:05 PM : open/close both feet
+3: 8:19 PM : open/close both fists
+4: 8:32 PM : open/close both feet
+
+open/close fists EEG markers:  
+	marker_start = 101; marker_end = 201
+open/close both feet EEG markders:
+        marker_start = 102; marker_end = 202
+
+Note:
+	1. sub-EB-43_EEG_recording_2025-06-08-19.46.10.csv
+		has 32 trials (32 open/close fists and 31 rest last rest trial was incomplete)
+	2. other csv files have 50 trials
+	3. don't use "sub-EB-43_EEG_recording_2025-06-08-20.20.11.csv" which doesn't have any markers

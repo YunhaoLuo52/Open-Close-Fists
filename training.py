@@ -7,6 +7,8 @@ import json
 import os
 from datetime import datetime
 from model import EEGNetTrainer
+from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import label_binarize
 
 def train_simple_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3):
     """Simple training loop"""
@@ -457,3 +459,594 @@ def train_eegnet_model(model, train_loader, val_loader, device, epochs=100, lr=0
                   f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.4f}')
     
     return train_losses, val_losses, best_val_acc
+
+
+
+def train_multiclass_eegnet(model, train_loader, val_loader, device, class_weights=None, 
+                           epochs=100, lr=0.001, experiment_name='multiclass'):
+    """
+    Training loop for multi-class EEGNet
+    """
+    
+    # Setup optimizer and scheduler
+    optimizer = EEGNetTrainer.get_eegnet_optimizer(model, lr=lr)
+    scheduler = EEGNetTrainer.get_eegnet_scheduler(optimizer)
+    
+    # Loss function for multi-class
+    if class_weights is not None:
+        class_weights = class_weights.to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+    else:
+        criterion = nn.CrossEntropyLoss()
+    
+    best_val_acc = 0
+    train_losses = []
+    val_losses = []
+    val_accuracies = []
+    best_epoch_metrics = {}
+    
+    print(f"\nStarting multi-class training for {epochs} epochs...")
+    
+    for epoch in range(epochs):
+        # Training phase
+        model.train()
+        train_loss = 0
+        train_correct = 0
+        train_total = 0
+        
+        for data, target in train_loader:
+            data, target = data.to(device), target.to(device)
+            
+            optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            
+            # Apply max norm constraint (EEGNet specific)
+            EEGNetTrainer.apply_max_norm_constraint(model)
+            
+            optimizer.step()
+            
+            train_loss += loss.item()
+            _, predicted = torch.max(output.data, 1)
+            train_total += target.size(0)
+            train_correct += (predicted == target).sum().item()
+        
+        # Validation phase
+        model.eval()
+        val_loss = 0
+        val_correct = 0
+        val_total = 0
+        all_val_preds = []
+        all_val_labels = []
+        all_val_probs = []
+        
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                loss = criterion(output, target)
+                
+                val_loss += loss.item()
+                
+                # Get predictions
+                probs = torch.softmax(output, dim=1)
+                _, predicted = torch.max(output.data, 1)
+                
+                val_total += target.size(0)
+                val_correct += (predicted == target).sum().item()
+                
+                # Store for metrics
+                all_val_preds.extend(predicted.cpu().numpy())
+                all_val_labels.extend(target.cpu().numpy())
+                all_val_probs.extend(probs.cpu().numpy())
+        
+        # Calculate metrics
+        train_acc = 100 * train_correct / train_total
+        val_acc = 100 * val_correct / val_total
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
+        val_accuracies.append(val_acc)
+        
+        # Update learning rate
+        scheduler.step(avg_val_loss)
+        
+        # Save best model
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), f'best_{experiment_name}_multiclass_model.pth')
+            
+            # Calculate additional metrics for best model
+            all_val_labels = np.array(all_val_labels)
+            all_val_preds = np.array(all_val_preds)
+            all_val_probs = np.array(all_val_probs)
+            
+            # Confusion matrix
+            cm = confusion_matrix(all_val_labels, all_val_preds)
+            
+            # Per-class metrics
+            class_report = classification_report(
+                all_val_labels, all_val_preds,
+                target_names=['Resting', 'Fists', 'Feet'],
+                output_dict=True
+            )
+            
+            # Multi-class AUC (one-vs-rest)
+            if len(np.unique(all_val_labels)) == 3:
+                y_true_binary = label_binarize(all_val_labels, classes=[0, 1, 2])
+                auc_scores = {}
+                for i, class_name in enumerate(['Resting', 'Fists', 'Feet']):
+                    auc_scores[class_name] = roc_auc_score(y_true_binary[:, i], all_val_probs[:, i])
+                macro_auc = np.mean(list(auc_scores.values()))
+            else:
+                auc_scores = {}
+                macro_auc = 0
+            
+            best_epoch_metrics = {
+                'epoch': epoch,
+                'val_accuracy': val_acc,
+                'confusion_matrix': cm.tolist(),
+                'classification_report': class_report,
+                'auc_scores': auc_scores,
+                'macro_auc': macro_auc
+            }
+        
+        # Print progress
+        if epoch % 10 == 0:
+            print(f'Epoch [{epoch}/{epochs}]')
+            print(f'  Train Loss: {avg_train_loss:.4f}, Train Acc: {train_acc:.2f}%')
+            print(f'  Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+            
+            if epoch == best_epoch_metrics.get('epoch', -1):
+                print(f'  *** New best model! ***')
+    
+    print(f'\n=== Training Complete ===')
+    print(f'Best Validation Accuracy: {best_val_acc:.2f}% at epoch {best_epoch_metrics["epoch"]}')
+    
+    # Print best model's confusion matrix
+    if 'confusion_matrix' in best_epoch_metrics:
+        print(f'\nBest Model Confusion Matrix:')
+        cm = np.array(best_epoch_metrics['confusion_matrix'])
+        print(f'        Predicted')
+        print(f'        Rest  Fist  Feet')
+        print(f'Rest    {cm[0,0]:4d}  {cm[0,1]:4d}  {cm[0,2]:4d}')
+        print(f'Fist    {cm[1,0]:4d}  {cm[1,1]:4d}  {cm[1,2]:4d}')
+        print(f'Feet    {cm[2,0]:4d}  {cm[2,1]:4d}  {cm[2,2]:4d}')
+        
+        # Print per-class AUC
+        if 'auc_scores' in best_epoch_metrics:
+            print(f'\nPer-class AUC scores:')
+            for class_name, auc in best_epoch_metrics['auc_scores'].items():
+                print(f'  {class_name}: {auc:.3f}')
+            print(f'  Macro-average AUC: {best_epoch_metrics["macro_auc"]:.3f}')
+    
+    return train_losses, val_losses, val_accuracies, best_epoch_metrics
+
+
+def save_multiclass_config(experiment_name, config_dict):
+    """Save configuration for multi-class model"""
+    os.makedirs('models', exist_ok=True)
+    
+    config_path = f'models/{experiment_name}_config.json'
+    with open(config_path, 'w') as f:
+        json.dump(config_dict, f, indent=2)
+    
+    print(f"Saved configuration to {config_path}")
+
+
+def evaluate_multiclass_model(model, test_loader, device, class_names=['Resting', 'Fists', 'Feet']):
+    """
+    Comprehensive evaluation for multi-class model
+    """
+    model.eval()
+    
+    all_preds = []
+    all_labels = []
+    all_probs = []
+    
+    with torch.no_grad():
+        for data, labels in test_loader:
+            data, labels = data.to(device), labels.to(device)
+            outputs = model(data)
+            
+            probs = torch.softmax(outputs, dim=1)
+            _, predicted = torch.max(outputs, 1)
+            
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
+    
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    all_probs = np.array(all_probs)
+    
+    # Calculate metrics
+    accuracy = np.mean(all_preds == all_labels) * 100
+    
+    # Confusion matrix
+    cm = confusion_matrix(all_labels, all_preds)
+    
+    # Classification report
+    report = classification_report(all_labels, all_preds, target_names=class_names, digits=3)
+    
+    # Multi-class AUC
+    y_true_binary = label_binarize(all_labels, classes=[0, 1, 2])
+    auc_scores = {}
+    for i, class_name in enumerate(class_names):
+        auc_scores[class_name] = roc_auc_score(y_true_binary[:, i], all_probs[:, i])
+    macro_auc = np.mean(list(auc_scores.values()))
+    
+    # Print results
+    print(f"\n=== TEST SET RESULTS ===")
+    print(f"Overall Accuracy: {accuracy:.2f}%")
+    print(f"\nClassification Report:")
+    print(report)
+    
+    print(f"\nConfusion Matrix:")
+    print(f'        Predicted')
+    print(f'        Rest  Fist  Feet')
+    print(f'Rest    {cm[0,0]:4d}  {cm[0,1]:4d}  {cm[0,2]:4d}')
+    print(f'Fist    {cm[1,0]:4d}  {cm[1,1]:4d}  {cm[1,2]:4d}')
+    print(f'Feet    {cm[2,0]:4d}  {cm[2,1]:4d}  {cm[2,2]:4d}')
+    
+    print(f"\nPer-class AUC scores:")
+    for class_name, auc in auc_scores.items():
+        print(f"  {class_name}: {auc:.3f}")
+    print(f"  Macro-average AUC: {macro_auc:.3f}")
+    
+    return {
+        'accuracy': accuracy,
+        'confusion_matrix': cm,
+        'all_labels': all_labels,
+        'all_preds': all_preds,
+        'all_probs': all_probs,
+        'auc_scores': auc_scores,
+        'macro_auc': macro_auc,
+        'classification_report': report
+    }
+
+def train_stage_model(model, train_loader, val_loader, device, stage_name, 
+                     class_weights=None, epochs=100, lr=0.001):
+    """
+    Training function for either stage of the two-stage classifier
+    """
+    # Setup optimizer and scheduler
+    optimizer = EEGNetTrainer.get_eegnet_optimizer(model, lr=lr)
+    scheduler = EEGNetTrainer.get_eegnet_scheduler(optimizer)
+    
+    # Loss function
+    if class_weights is not None:
+        class_weights = class_weights.to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+    else:
+        criterion = nn.CrossEntropyLoss()
+    
+    # For binary classification with 2 outputs
+    if model.classify.out_features == 1:
+        criterion = nn.BCEWithLogitsLoss()
+    
+    best_val_acc = 0
+    train_losses = []
+    val_losses = []
+    val_accuracies = []
+    best_metrics = {}
+    
+    print(f"\nTraining {stage_name} model for {epochs} epochs...")
+    
+    for epoch in range(epochs):
+        # Training
+        model.train()
+        train_loss = 0
+        train_correct = 0
+        train_total = 0
+        
+        for data, target in train_loader:
+            data, target = data.to(device), target.to(device)
+            
+            optimizer.zero_grad()
+            output = model(data)
+            
+            if model.classify.out_features == 1:
+                target = target.float().view(-1, 1)
+                loss = criterion(output, target)
+                pred = (torch.sigmoid(output) > 0.5).float()
+            else:
+                loss = criterion(output, target)
+                _, pred = torch.max(output, 1)
+            
+            loss.backward()
+            
+            # Apply max norm constraint
+            EEGNetTrainer.apply_max_norm_constraint(model)
+            
+            optimizer.step()
+            
+            train_loss += loss.item()
+            train_total += target.size(0)
+            
+            if model.classify.out_features == 1:
+                train_correct += (pred == target).sum().item()
+            else:
+                train_correct += (pred == target).sum().item()
+        
+        # Validation
+        model.eval()
+        val_loss = 0
+        val_correct = 0
+        val_total = 0
+        all_val_preds = []
+        all_val_labels = []
+        all_val_probs = []
+        
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                
+                if model.classify.out_features == 1:
+                    target = target.float().view(-1, 1)
+                    loss = criterion(output, target)
+                    probs = torch.sigmoid(output)
+                    pred = (probs > 0.5).float()
+                    
+                    all_val_probs.extend(probs.cpu().numpy().flatten())
+                else:
+                    loss = criterion(output, target)
+                    probs = torch.softmax(output, dim=1)
+                    _, pred = torch.max(output, 1)
+                    
+                    all_val_probs.extend(probs[:, 1].cpu().numpy())  # Prob of positive class
+                
+                val_loss += loss.item()
+                val_total += target.size(0)
+                
+                if model.classify.out_features == 1:
+                    val_correct += (pred == target).sum().item()
+                    all_val_preds.extend(pred.cpu().numpy().flatten())
+                    all_val_labels.extend(target.cpu().numpy().flatten())
+                else:
+                    val_correct += (pred == target).sum().item()
+                    all_val_preds.extend(pred.cpu().numpy())
+                    all_val_labels.extend(target.cpu().numpy())
+        
+        # Calculate metrics
+        train_acc = 100 * train_correct / train_total
+        val_acc = 100 * val_correct / val_total
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss = val_loss / len(val_loader)
+        
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
+        val_accuracies.append(val_acc)
+        
+        # Update learning rate
+        scheduler.step(avg_val_loss)
+        
+        # Save best model
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), f'best_{stage_name}_model.pth')
+            
+            # Calculate additional metrics
+            all_val_labels = np.array(all_val_labels)
+            all_val_preds = np.array(all_val_preds)
+            all_val_probs = np.array(all_val_probs)
+            
+            cm = confusion_matrix(all_val_labels, all_val_preds)
+            auc = roc_auc_score(all_val_labels, all_val_probs)
+            
+            best_metrics = {
+                'epoch': epoch,
+                'val_accuracy': val_acc,
+                'confusion_matrix': cm.tolist(),
+                'auc': auc
+            }
+        
+        # Print progress
+        if epoch % 10 == 0:
+            print(f'Epoch [{epoch}/{epochs}] - '
+                  f'Train Loss: {avg_train_loss:.4f}, Train Acc: {train_acc:.2f}%, '
+                  f'Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+    
+    print(f'\n{stage_name} Training Complete!')
+    print(f'Best Validation Accuracy: {best_val_acc:.2f}% at epoch {best_metrics["epoch"]}')
+    
+    return train_losses, val_losses, val_accuracies, best_metrics
+
+
+def evaluate_stage_model(model, test_loader, device, stage_name, class_names):
+    """
+    Evaluate a stage model
+    """
+    model.eval()
+    
+    all_preds = []
+    all_labels = []
+    all_probs = []
+    
+    with torch.no_grad():
+        for data, labels in test_loader:
+            data, labels = data.to(device), labels.to(device)
+            outputs = model(data)
+            
+            if model.classify.out_features == 1:
+                probs = torch.sigmoid(outputs)
+                preds = (probs > 0.5).float()
+                
+                all_probs.extend(probs.cpu().numpy().flatten())
+                all_preds.extend(preds.cpu().numpy().flatten())
+                all_labels.extend(labels.cpu().numpy())
+            else:
+                probs = torch.softmax(outputs, dim=1)
+                _, preds = torch.max(outputs, 1)
+                
+                all_probs.extend(probs[:, 1].cpu().numpy())  # Prob of positive class
+                all_preds.extend(preds.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+    
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    all_probs = np.array(all_probs)
+    
+    # Calculate metrics
+    accuracy = np.mean(all_preds == all_labels) * 100
+    cm = confusion_matrix(all_labels, all_preds)
+    auc = roc_auc_score(all_labels, all_probs)
+    report = classification_report(all_labels, all_preds, target_names=class_names, digits=3)
+    
+    print(f"\n=== {stage_name} TEST RESULTS ===")
+    print(f"Accuracy: {accuracy:.2f}%")
+    print(f"AUC: {auc:.3f}")
+    print(f"\nClassification Report:")
+    print(report)
+    print(f"\nConfusion Matrix:")
+    print(cm)
+    
+    return {
+        'accuracy': accuracy,
+        'auc': auc,
+        'confusion_matrix': cm,
+        'all_labels': all_labels,
+        'all_preds': all_preds,
+        'all_probs': all_probs,
+        'classification_report': report
+    }
+
+
+def evaluate_two_stage_system(stage1_model, stage2_model, test_loader, device, test_dataset):
+    """
+    Evaluate the complete two-stage system
+    """
+    stage1_model.eval()
+    stage2_model.eval()
+    
+    all_true_labels = []
+    all_pred_labels = []
+    all_stage1_probs = []
+    all_stage2_probs = []
+    stage1_predictions = []
+    
+    with torch.no_grad():
+        for i, (data, _) in enumerate(test_loader):
+            data = data.to(device)
+            batch_size = data.size(0)
+            
+            # Get true 3-class labels for this batch
+            start_idx = i * test_loader.batch_size
+            end_idx = min(start_idx + batch_size, len(test_dataset))
+            true_3class_labels = test_dataset.original_labels[start_idx:end_idx]
+            all_true_labels.extend(true_3class_labels)
+            
+            # Stage 1: Rest vs Motor Imagery
+            stage1_outputs = stage1_model(data)
+            if stage1_model.classify.out_features == 1:
+                stage1_probs = torch.sigmoid(stage1_outputs).squeeze()
+                stage1_preds = (stage1_probs > 0.5).float()
+            else:
+                stage1_probs = torch.softmax(stage1_outputs, dim=1)[:, 1]
+                stage1_preds = torch.argmax(stage1_outputs, dim=1).float()
+            
+            all_stage1_probs.extend(stage1_probs.cpu().numpy())
+            stage1_predictions.extend(stage1_preds.cpu().numpy())
+            
+            # Initialize predictions
+            batch_pred_labels = np.zeros(batch_size)
+            
+            # For samples predicted as motor imagery, apply stage 2
+            motor_imagery_mask = stage1_preds == 1
+            motor_imagery_indices = torch.where(motor_imagery_mask)[0]
+            
+            if len(motor_imagery_indices) > 0:
+                motor_imagery_data = data[motor_imagery_indices]
+                
+                # Stage 2: Fists vs Feet
+                stage2_outputs = stage2_model(motor_imagery_data)
+                if stage2_model.classify.out_features == 1:
+                    stage2_probs = torch.sigmoid(stage2_outputs).squeeze()
+                    stage2_preds = (stage2_probs > 0.5).float()
+                else:
+                    stage2_probs = torch.softmax(stage2_outputs, dim=1)[:, 1]
+                    stage2_preds = torch.argmax(stage2_outputs, dim=1).float()
+                
+                # Convert stage 2 predictions to 3-class labels
+                # Stage 2: 0 = fists (class 1), 1 = feet (class 2)
+                for idx, motor_idx in enumerate(motor_imagery_indices.cpu().numpy()):
+                    if stage2_preds[idx] == 0:
+                        batch_pred_labels[motor_idx] = 1  # Fists
+                    else:
+                        batch_pred_labels[motor_idx] = 2  # Feet
+                
+                # Store stage 2 probabilities for motor imagery samples
+                stage2_prob_array = np.zeros(batch_size)
+                stage2_prob_array[motor_imagery_indices.cpu().numpy()] = stage2_probs.cpu().numpy()
+                all_stage2_probs.extend(stage2_prob_array)
+            else:
+                all_stage2_probs.extend(np.zeros(batch_size))
+            
+            all_pred_labels.extend(batch_pred_labels)
+    
+    all_true_labels = np.array(all_true_labels).astype(int)
+    all_pred_labels = np.array(all_pred_labels).astype(int)
+    
+    # Calculate metrics
+    accuracy = np.mean(all_true_labels == all_pred_labels) * 100
+    cm = confusion_matrix(all_true_labels, all_pred_labels)
+    
+    # Calculate per-class metrics
+    class_names = ['Resting', 'Fists', 'Feet']
+    report = classification_report(all_true_labels, all_pred_labels, 
+                                 target_names=class_names, digits=3)
+    
+    print("\n=== TWO-STAGE SYSTEM RESULTS ===")
+    print(f"Overall Accuracy: {accuracy:.2f}%")
+    print(f"\nClassification Report:")
+    print(report)
+    print(f"\nConfusion Matrix:")
+    print(f'        Predicted')
+    print(f'        Rest  Fist  Feet')
+    for i, true_class in enumerate(['Rest', 'Fist', 'Feet']):
+        print(f"{true_class:6s}  ", end="")
+        for j in range(3):
+            print(f"{cm[i,j]:4d}  ", end="")
+        print()
+    
+    # Stage-wise analysis
+    print(f"\n=== STAGE-WISE ANALYSIS ===")
+    stage1_acc = np.mean(
+        (np.array(stage1_predictions) == 0) == (all_true_labels == 0)
+    ) * 100
+    print(f"Stage 1 (Rest vs Motor) Accuracy: {stage1_acc:.2f}%")
+    
+    # Stage 2 accuracy (only for motor imagery samples)
+    motor_mask = all_true_labels > 0
+    if np.sum(motor_mask) > 0:
+        stage2_acc = np.mean(
+            all_true_labels[motor_mask] == all_pred_labels[motor_mask]
+        ) * 100
+        print(f"Stage 2 (Fists vs Feet) Accuracy: {stage2_acc:.2f}%")
+    
+    return {
+        'accuracy': accuracy,
+        'confusion_matrix': cm,
+        'all_true_labels': all_true_labels,
+        'all_pred_labels': all_pred_labels,
+        'all_stage1_probs': np.array(all_stage1_probs),
+        'all_stage2_probs': np.array(all_stage2_probs),
+        'classification_report': report,
+        'stage1_accuracy': stage1_acc,
+        'stage2_accuracy': stage2_acc if np.sum(motor_mask) > 0 else None
+    }
+
+
+def save_two_stage_config(config_dict):
+    """Save configuration for two-stage model"""
+    os.makedirs('models', exist_ok=True)
+    
+    config_path = 'models/two_stage_config.json'
+    with open(config_path, 'w') as f:
+        json.dump(config_dict, f, indent=2)
+    
+    print(f"Saved configuration to {config_path}")

@@ -21,7 +21,7 @@ def main(exp_number=1):
     print(f"Using device: {device}")
 
     # Data directory - modify this path as needed
-    data_dir = "C:\Github\OpenCloseFeet\Muse_data_OpenCloseFeet_segmented"
+    data_dir = "C:\Github\OpenCloseFeet\Muse_data_OpenCloseFeet_segmented\session1"
 
     if exp_number == 1:
         task = "openclosefists"
@@ -40,7 +40,9 @@ def main(exp_number=1):
     )
 
     test_dataset = TwoChannelEEGDataset(
-        data_dir=data_dir,
+        # Used for cross session
+        data_dir="C:\Github\OpenCloseFeet\Muse_data_OpenCloseFeet_segmented\session2",
+        #data_dir=data_dir,
         exp_number=exp_number,
         run_number=[1],  # load runs
         task=task,
@@ -86,5 +88,6 @@ def main(exp_number=1):
 
 
 if __name__ == "__main__":
+    torch.cuda.empty_cache()
     main(exp_number=1)
     main(exp_number=2)

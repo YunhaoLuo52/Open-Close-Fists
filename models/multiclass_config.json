@@ -1,0 +1,22 @@
+{
+  "task": "multiclass",
+  "classes": [
+    "Resting",
+    "Fists",
+    "Feet"
+  ],
+  "num_classes": 3,
+  "window_size": 1025,
+  "use_normalization": false,
+  "normalization_params_file": null,
+  "model_architecture": "EEGNet_MultiClass",
+  "training_epochs": 500,
+  "best_val_accuracy": 70.0,
+  "test_accuracy": 59.50920245398773,
+  "test_macro_auc": 0.7925895945800652,
+  "class_weights": [
+    0.6666666865348816,
+    1.3333333730697632,
+    1.3333333730697632
+  ]
+}

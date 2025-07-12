@@ -1,0 +1,31 @@
+============================================================
+TWO-STAGE EEG CLASSIFICATION REPORT
+============================================================
+
+STAGE 1: Rest vs Motor Imagery
+----------------------------------------
+Accuracy: 81.60%
+AUC: 0.880
+
+STAGE 2: Fists vs Feet
+----------------------------------------
+Accuracy: 56.10%
+AUC: 0.636
+
+COMBINED TWO-STAGE SYSTEM
+----------------------------------------
+Overall Accuracy: 65.03%
+Stage 1 Component Accuracy: 81.60%
+Stage 2 Component Accuracy: 51.22%
+
+CLASSIFICATION REPORT
+----------------------------------------
+              precision    recall  f1-score   support
+
+     Resting      0.831     0.790     0.810        81
+       Fists      0.383     0.719     0.500        32
+        Feet      0.731     0.380     0.500        50
+
+    accuracy                          0.650       163
+   macro avg      0.648     0.630     0.603       163
+weighted avg      0.712     0.650     0.654       163
